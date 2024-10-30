@@ -13,49 +13,19 @@ class DenoisingDataset(Dataset):
         stride=10,
         aug_times=1,
         scales=[1],
-        sigma_range=(2, 12),
-        transform=None,
+        sigma=15,
+        num_noise_realiza=2,
     ):
         self.data_dir = data_dir
         self.patch_size = patch_size
         self.stride = stride
         self.aug_times = aug_times
         self.scales = scales
-        self.sigma_range = sigma_range
-        self.transform = transform
+        self.sigma = sigma
+        self.num_noise_realiza = num_noise_realiza
 
         # Get file list
         self.file_list = glob.glob(data_dir + "/*.png")
-
-        # Pre-generate all patches
-        self.patches = self._generate_all_patches()
-
-    def _generate_all_patches(self):
-        patches = []
-
-        for file_name in self.file_list:
-            # Read image
-            clean_img = cv2.imread(file_name, 0)
-            h, w = clean_img.shape
-
-            # Generate patches for each scale
-            for s in self.scales:
-                h_scaled, w_scaled = int(h * s), int(w * s)
-
-                # Extract patches
-                for i in range(0, h_scaled - self.patch_size + 1, self.stride):
-                    for j in range(0, w_scaled - self.patch_size + 1, self.stride):
-                        clean_patch = clean_img[
-                            i : i + self.patch_size, j : j + self.patch_size
-                        ]
-
-                        # Data augmentation
-                        for _ in range(self.aug_times):
-                            mode = np.random.randint(0, 8)
-                            aug_patch = self._data_aug(clean_patch, mode)
-                            patches.append(aug_patch)
-
-        return patches
 
     def _data_aug(self, img, mode):
         if mode == 0:
@@ -75,29 +45,106 @@ class DenoisingDataset(Dataset):
         elif mode == 7:
             return np.flipud(np.rot90(img, k=3))
 
+    def _noise_aug(self, mode):
+        """Matches Keras discrete noise levels"""
+        noise_levels = {
+            0: 2,
+            1: 4,
+            2: 6,
+            3: 8,
+            4: 10,
+            5: 12,
+            6: 14,
+            7: 16,
+            8: 18,
+            9: 20,
+        }
+        return noise_levels.get(mode, self.sigma)
+
     def __len__(self):
-        return len(self.patches)
+        return len(self.file_list) * self.num_noise_realiza
 
     def __getitem__(self, idx):
-        clean_patch = self.patches[idx]
+        file_idx = idx // self.num_noise_realiza
+        file_name = self.file_list[file_idx]
 
-        # Add noise
-        sigma = np.random.uniform(self.sigma_range[0], self.sigma_range[1])
-        noise = np.random.normal(0, sigma, clean_patch.shape)
-        noisy_patch = clean_patch + noise
+        # Read image
+        clean_img = cv2.imread(file_name, 0)
+        h, w = clean_img.shape
 
-        # Normalize to [0,1]
-        clean_patch = clean_patch.astype(np.float32) / 255.0
-        noisy_patch = noisy_patch.astype(np.float32) / 255.0
+        patches = []
+        clean_patches = []
 
-        # Convert to tensor
-        clean_patch = torch.from_numpy(clean_patch).unsqueeze(
-            0
-        )  # Add channel dimension
-        noisy_patch = torch.from_numpy(noisy_patch).unsqueeze(0)
+        # Get noise level (either fixed or augmented)
+        sigma = self._noise_aug(mode=np.random.randint(0, 6))
 
-        if self.transform:
-            clean_patch = self.transform(clean_patch)
-            noisy_patch = self.transform(noisy_patch)
+        for s in self.scales:
+            h_scaled, w_scaled = int(h * s), int(w * s)
 
-        return noisy_patch, clean_patch
+            # Extract patches
+            for i in range(0, h_scaled - self.patch_size + 1, self.stride):
+                for j in range(0, w_scaled - self.patch_size + 1, self.stride):
+                    clean_x = clean_img[
+                        i : i + self.patch_size, j : j + self.patch_size
+                    ]
+
+                    # Data augmentation with different rotation
+                    for k in range(self.aug_times):
+                        mode_k = np.random.randint(0, 8)
+                        clean_x_aug = self._data_aug(clean_x, mode=mode_k)
+
+                        # Add noise
+                        noise = np.random.normal(0, sigma, clean_x_aug.shape)
+                        noisy_x_aug = clean_x_aug + noise
+
+                        patches.append(noisy_x_aug)
+                        clean_patches.append(clean_x_aug)
+
+        return patches, clean_patches
+
+
+def denoise_collate_fn(batch):
+    """Custom collate function for the denoising dataset"""
+    noisy_patches = []
+    clean_patches = []
+
+    # Unpack the batch
+    for noisy_list, clean_list in batch:
+        noisy_patches.extend(noisy_list)
+        clean_patches.extend(clean_list)
+
+    # Convert to numpy arrays
+    noisy_patches = np.array(noisy_patches, dtype=np.float32) / 255.0
+    clean_patches = np.array(clean_patches, dtype=np.float32) / 255.0
+
+    # Convert to tensors and add channel dimension
+    noisy_patches = torch.from_numpy(noisy_patches).unsqueeze(1)
+    clean_patches = torch.from_numpy(clean_patches).unsqueeze(1)
+
+    # Ensure we have complete batches
+    batch_size = 128  # You might want to make this configurable
+    num_complete_batches = len(noisy_patches) // batch_size
+    if num_complete_batches == 0:
+        raise RuntimeError("Not enough patches to form a complete batch")
+
+    # Only keep complete batches
+    noisy_patches = noisy_patches[: num_complete_batches * batch_size]
+    clean_patches = clean_patches[: num_complete_batches * batch_size]
+
+    # Reshape into batches
+    noisy_patches = noisy_patches.view(
+        num_complete_batches,
+        batch_size,
+        1,
+        noisy_patches.size(-2),
+        noisy_patches.size(-1),
+    )
+    clean_patches = clean_patches.view(
+        num_complete_batches,
+        batch_size,
+        1,
+        clean_patches.size(-2),
+        clean_patches.size(-1),
+    )
+
+    return noisy_patches, clean_patches
