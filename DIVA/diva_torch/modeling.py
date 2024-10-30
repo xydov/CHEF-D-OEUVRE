@@ -60,8 +60,8 @@ class DIVA2D(nn.Module):
         )
 
         # Pooling layers for kernels
-        self.ori_poten_pool = nn.MaxPool2d(kernel_size=21, stride=15, padding=10)
-        self.inter_kernel_pool = nn.MaxPool2d(kernel_size=21, stride=15, padding=10)
+        self.ori_poten_pool = nn.MaxPool2d(kernel_size=21, stride=15, padding="same")
+        self.inter_kernel_pool = nn.MaxPool2d(kernel_size=21, stride=15, padding="same")
 
         # Hamiltonian projection
         self.proj_coef = HamiltonianConv2d(filters, filters, kernel_size)
