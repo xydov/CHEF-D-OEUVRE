@@ -26,19 +26,20 @@ class HamiltonianConv2d(nn.Module):
             .unsqueeze(0)
             .unsqueeze(0)
         )
-        self.weights_1 = weights_1.repeat(out_channels, 1, 1, 1)
-
+        self.register_buffer(
+            "weights_1", weights_1.repeat(out_channels, in_channels, 1, 1)
+        )
         # Define weights for h^2/2m
-        self.weights_2 = nn.Parameter(torch.randn(out_channels, 1, 3, 3))
+        self.weights_2 = nn.Parameter(torch.randn(out_channels, in_channels, 3, 3))
         nn.init.orthogonal_(self.weights_2)
 
     def forward(self, x):
         # Combine weights to form Hamiltonian kernel
         kernel = self.weights_1 * self.weights_2
         if self.kernel_3 is not None:
-            kernel = kernel + self.kernel_3
+            kernel = kernel + self.kernel_3.to(self.weights_1.device)
         if self.kernel_4 is not None:
-            kernel = kernel + self.kernel_4
+            kernel = kernel + self.kernel_4.to(self.weights_1.device)
 
         return nn.functional.conv2d(x, kernel, padding="same")
 
@@ -48,7 +49,7 @@ class DIVA2D(nn.Module):
         self, depth=10, filters=64, image_channels=1, kernel_size=5, use_bnorm=True
     ):
         super(DIVA2D, self).__init__()
-
+        self.filters = filters
         # Initial patches
         self.initial_patches = nn.Sequential(
             nn.Conv2d(image_channels, filters, kernel_size, padding="same"), nn.ReLU()
@@ -60,8 +61,9 @@ class DIVA2D(nn.Module):
         )
 
         # Pooling layers for kernels
-        self.ori_poten_pool = nn.MaxPool2d(kernel_size=21, stride=15, padding="same")
-        self.inter_kernel_pool = nn.MaxPool2d(kernel_size=21, stride=15, padding="same")
+        self.ori_poten_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.inter_kernel_pool = nn.AdaptiveAvgPool2d((1, 1))
 
         # Hamiltonian projection
         self.proj_coef = HamiltonianConv2d(filters, filters, kernel_size)
@@ -91,6 +93,14 @@ class DIVA2D(nn.Module):
         # Get kernels
         ori_poten_kernel = self.ori_poten_pool(initial)
         inter_kernel = self.inter_kernel_pool(inter)
+
+        ori_poten_kernel = ori_poten_kernel.mean(dim=0)  # Shape: [filters, 1, 1]
+        inter_kernel = inter_kernel.mean(dim=0)  # Shape: [filters, 1, 1]
+
+        ori_poten_kernel = ori_poten_kernel.view(self.filters, 1, 1, 1).expand(
+            -1, 1, 3, 3
+        )
+        inter_kernel = inter_kernel.view(self.filters, 1, 1, 1).expand(-1, 1, 3, 3)
 
         # Project coefficients
         self.proj_coef.kernel_3 = ori_poten_kernel

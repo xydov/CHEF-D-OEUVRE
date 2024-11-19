@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from .dataset import denoise_collate_fn
 from pathlib import Path
 import logging
 import datetime
@@ -34,7 +35,7 @@ class DIVATrainer:
             batch_size=1,  # Actual batching handled in collate_fn
             shuffle=True,
             num_workers=4,
-            collate_fn=train_dataset.denoise_collate_fn,
+            collate_fn=denoise_collate_fn,
         )
 
         # Loss and optimizer (matching Keras)
@@ -165,11 +166,11 @@ class DIVATrainer:
             self.log(f"Epoch: {epoch}, Loss: {train_loss:.6f}")
 
         # Plot training history (matching Keras visualization)
-        plt.figure()
-        plt.plot(self.history["epoch"], self.history["loss"])
-        plt.title("model loss")
-        plt.ylabel("loss")
-        plt.xlabel("epoch")
-        plt.legend(["train"], loc="upper right")
-        plt.savefig(self.save_dir / "training_history.png")
-        plt.close()
+        # plt.figure()
+        # plt.plot(self.history["epoch"], self.history["loss"])
+        # plt.title("model loss")
+        # plt.ylabel("loss")
+        # plt.xlabel("epoch")
+        # plt.legend(["train"], loc="upper right")
+        # plt.savefig(self.save_dir / "training_history.png")
+        # plt.close()

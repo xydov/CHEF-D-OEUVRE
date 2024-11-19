@@ -10,19 +10,17 @@ def main():
         "--model", default="DIVA2D", type=str, help="choose a type of model"
     )
     parser.add_argument("--kernel_size", default=5, type=int, help="kernel size")
-    parser.add_argument("--batch_size", default=128, type=int, help="batch size")
+    parser.add_argument("--batch_size", default=8, type=int, help="batch size")
     parser.add_argument(
         "--train_data",
-        default="./data/training_set",
+        default="./data/BSD68/",
         type=str,
         help="path of train data",
     )
     parser.add_argument("--sigma", default=15, type=int, help="noise level")
+    parser.add_argument("--epoch", default=12, type=int, help="number of train epoches")
     parser.add_argument(
-        "--epoch", default=100, type=int, help="number of train epoches"
-    )
-    parser.add_argument(
-        "--lr", default=1e-3, type=float, help="initial learning rate for Adam"
+        "--lr", default=3e-3, type=float, help="initial learning rate for Adam"
     )
     args = parser.parse_args()
 
