@@ -130,10 +130,10 @@ def denoise_image(noisy_img_path, noise_factor=0.5):
     # Afficher l'image bruitée et l'image débruitée
     plt.figure(figsize=(6, 3))
     plt.subplot(1, 2, 1)
-    plt.title("Noisy Image")
+    plt.title("X")
     plt.imshow(noisy_img.reshape(28, 28), cmap="gray")
     plt.subplot(1, 2, 2)
-    plt.title("Denoised Image")
+    plt.title("Y")
     plt.imshow(denoised_img.reshape(28, 28), cmap="gray")
     plt.show()
 
@@ -143,7 +143,7 @@ def denoise_image(noisy_img_path, noise_factor=0.5):
 
 
 # enleve le commentaire juste au dessous pour tester sur une image nomé '1.jpg' dans ton rép.
-#denoise_image('1.jpg')
+denoise_image('1.jpg')
 
 '''show(x_test_noisy[:20], 2, 10)
 pred = autoencoder.predict(x_test[:20])
