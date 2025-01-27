@@ -24,8 +24,12 @@ class DenoisingDataset(Dataset):
         self.sigma = sigma
         self.num_noise_realiza = num_noise_realiza
 
+        self.images = []
+
         # Get file list
         self.file_list = glob.glob(data_dir + "/*.png")
+        for fname in self.file_list:
+            self.images.append(cv2.imread(fname, cv2.IMREAD_GRAYSCALE))
 
     def _data_aug(self, img, mode):
         if mode == 0:
@@ -65,11 +69,13 @@ class DenoisingDataset(Dataset):
         return len(self.file_list) * self.num_noise_realiza
 
     def __getitem__(self, idx):
-        file_idx = idx // self.num_noise_realiza
-        file_name = self.file_list[file_idx]
+        # file_idx = idx // self.num_noise_realiza
+        # file_name = self.file_list[file_idx]
 
-        # Read image
-        clean_img = cv2.imread(file_name, 0)
+        # # Read image
+        # clean_img = cv2.imread(file_name, 0)
+        clean_img = self.images[idx // self.num_noise_realiza]
+
         h, w = clean_img.shape
 
         patches = []

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import glob
 import re
 import os
+from heavyball import ForeachPSGDKron
 
 
 class DIVATrainer:
@@ -18,8 +19,8 @@ class DIVATrainer:
         model,
         train_dataset,
         save_dir,
-        batch_size=128,
-        learning_rate=1e-3,
+        batch_size=32,
+        learning_rate=1e-4,
         device="cuda" if torch.cuda.is_available() else "cpu",
     ):
         self.model = model.to(device)
@@ -32,17 +33,24 @@ class DIVATrainer:
         # Initialize training components
         self.train_loader = DataLoader(
             train_dataset,
-            batch_size=1,  # Actual batching handled in collate_fn
+            batch_size=4,  # Actual batching handled in collate_fn
             shuffle=True,
             num_workers=4,
             collate_fn=denoise_collate_fn,
+            persistent_workers=True,
         )
 
         # Loss and optimizer (matching Keras)
         self.criterion = nn.MSELoss(
             reduction="sum"
         )  # Sum reduction to match Keras sum_squared_error
-        self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        self.optimizer = ForeachPSGDKron(
+            self.model.parameters(),
+            lr=learning_rate,
+            caution=True,
+            warmup_steps=1000,
+            weight_decay=1e-3,
+        )
 
         # Setup logging
         self.setup_logging()
@@ -90,11 +98,24 @@ class DIVATrainer:
             initial_epoch = 0
         return initial_epoch
 
+    # def save_checkpoint(self, epoch):
+    #     """Save model checkpoint matching Keras format"""
+    #     checkpoint = {
+    #         "epoch": epoch,
+    #         "model_state_dict": self.model.state_dict(),
+    #         "optimizer_state_dict": self.optimizer.state_dict(),
+    #     }
+    #     torch.save(checkpoint, self.save_dir / f"model_{epoch:03d}.pth")
     def save_checkpoint(self, epoch):
         """Save model checkpoint matching Keras format"""
+        # Get the original model's state dict
+        orig_model = (
+            self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
+        )
+
         checkpoint = {
             "epoch": epoch,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": orig_model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
         }
         torch.save(checkpoint, self.save_dir / f"model_{epoch:03d}.pth")
@@ -131,7 +152,9 @@ class DIVATrainer:
                 steps += 1
 
                 if batch_idx % 100 == 0:
-                    msg = f"Train Epoch: {epoch} [{batch_idx}/{1000}] Loss: {loss.item():.6f}"
+                    msg = (
+                        f"Train Epoch: {epoch} [{steps}/{1000}] Loss: {loss.item():.6f}"
+                    )
                     self.log(msg)
                     logging.info(f"{loss.item():.6f}")
 
@@ -156,6 +179,7 @@ class DIVATrainer:
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
+        self.model = torch.compile(self.model, mode="reduce-overhead")
         for epoch in range(initial_epoch + 1, epochs + 1):
             train_loss = self.train_epoch(epoch)
 
