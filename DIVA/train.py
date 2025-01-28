@@ -18,7 +18,7 @@ def main():
         help="path of train data",
     )
     parser.add_argument("--sigma", default=15, type=int, help="noise level")
-    parser.add_argument("--epoch", default=30, type=int, help="number of train epoches")
+    parser.add_argument("--epoch", default=40, type=int, help="number of train epoches")
     parser.add_argument(
         "--lr", default=3e-4, type=float, help="initial learning rate for Adam"
     )

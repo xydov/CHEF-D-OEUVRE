@@ -98,24 +98,15 @@ class DIVATrainer:
             initial_epoch = 0
         return initial_epoch
 
-    # def save_checkpoint(self, epoch):
-    #     """Save model checkpoint matching Keras format"""
-    #     checkpoint = {
-    #         "epoch": epoch,
-    #         "model_state_dict": self.model.state_dict(),
-    #         "optimizer_state_dict": self.optimizer.state_dict(),
-    #     }
-    #     torch.save(checkpoint, self.save_dir / f"model_{epoch:03d}.pth")
     def save_checkpoint(self, epoch):
         """Save model checkpoint matching Keras format"""
-        # Get the original model's state dict
-        orig_model = (
+        # Always save the original (uncompiled) model state
+        uncompiled_model = (
             self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
         )
-
         checkpoint = {
             "epoch": epoch,
-            "model_state_dict": orig_model.state_dict(),
+            "model_state_dict": uncompiled_model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
         }
         torch.save(checkpoint, self.save_dir / f"model_{epoch:03d}.pth")
@@ -169,15 +160,32 @@ class DIVATrainer:
         self.history["epoch"].append(epoch)
         return avg_loss
 
+    def load_checkpoint(self, epoch):
+        """Load model checkpoint into the uncompiled model, then recompile if needed."""
+        checkpoint_path = self.save_dir / f"model_{epoch:03d}.pth"
+        checkpoint = torch.load(checkpoint_path)
+
+        # If currently compiled, get the original model
+        uncompiled_model = (
+            self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
+        )
+        uncompiled_model.load_state_dict(checkpoint["model_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        return uncompiled_model
+
     def train(self, epochs):
         """Main training loop"""
         # Find last checkpoint (matching Keras behavior)
         initial_epoch = self.find_last_checkpoint()
         if initial_epoch > 0:
             self.log(f"resuming by loading epoch {initial_epoch:03d}")
-            checkpoint = torch.load(self.save_dir / f"model_{initial_epoch:03d}.pth")
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            self.model = self.load_checkpoint(initial_epoch)
+            self.optimizer = ForeachPSGDKron(
+                self.model.parameters(),
+                lr=self.learning_rate,
+                caution=True,
+            )
 
         self.model = torch.compile(self.model, mode="reduce-overhead")
         for epoch in range(initial_epoch + 1, epochs + 1):
